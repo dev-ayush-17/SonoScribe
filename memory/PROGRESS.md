@@ -6,7 +6,7 @@
 - [x] Memory bank created (`memory/PROJECT.md`, `DECISIONS.md`, `PROGRESS.md`, `PATTERNS.md`)
 - [x] Backend architecture: FastAPI 0.115+, SQLAlchemy async, SQLite database, pydantic-settings
 - [x] Health check & provider config endpoints (`/api/v1/health`, `/api/v1/config`)
-- [x] Audio capture pipeline: sounddevice WASAPI loopback support on Windows, mono conversion, 20s VAD chunking with 1.5s overlap
+- [x] Audio capture pipeline: Native hardware sample rate auto-detection (48kHz/44.1kHz), mono channel calculation, in-memory resampling to 16kHz, WDM-KS/Mapper device filtering, and 20s VAD chunking with 1.5s overlap
 - [x] Transcription provider abstraction: `faster-whisper` (local) & Groq STT (cloud), retry queue for failed chunks
 - [x] Recording Session Manager: start/stop lifecycle, real-time segment saving into SQLite database
 - [x] Meetings API: list, detail, patch, delete, and export (Markdown, plain Text, JSON formats)

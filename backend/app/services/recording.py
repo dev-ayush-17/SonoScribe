@@ -168,7 +168,7 @@ class RecordingSession:
         try:
             # Check for silence (skip near-silent chunks)
             rms = np.sqrt(np.mean(chunk.data ** 2))
-            if rms < 0.001:  # Very quiet — likely silence
+            if rms < 0.0001:  # Only skip near-total digital silence
                 logger.debug("Skipping silent chunk %d (rms=%.6f)", chunk.chunk_index, rms)
                 return
 

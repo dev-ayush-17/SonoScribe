@@ -1,4 +1,4 @@
-"""Audio capture service — robust system audio & microphone capture with automatic resampling."""
+"""Audio capture service — robust system audio & microphone capture with automatic resampling and device fallback."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class AudioDeviceInfo:
 
 
 class AudioCaptureService:
-    """Captures system audio (loopback) or microphone input with auto-resampling to 16kHz."""
+    """Captures system audio or microphone input with auto-resampling to 16kHz and fail-safe fallback."""
 
     def __init__(
         self,
@@ -82,7 +82,7 @@ class AudioCaptureService:
 
     @staticmethod
     def list_devices() -> List[AudioDeviceInfo]:
-        """List available, cleaned audio devices (filtering out redundant WDM-KS/Mapper entries)."""
+        """List available, cleaned input devices (filtering out WDM-KS/Mapper entries)."""
         try:
             import sounddevice as sd
         except ImportError:
@@ -97,7 +97,7 @@ class AudioCaptureService:
             if dev.get("hostapi") is not None:
                 hostapi_name = hostapis[dev["hostapi"]]["name"]
 
-            # Filter out WDM-KS devices on Windows as they fail with blocking API unsupported
+            # Filter out WDM-KS devices as they fail with blocking API unsupported
             if "wdm-ks" in hostapi_name.lower():
                 continue
 
@@ -106,16 +106,15 @@ class AudioCaptureService:
             if "sound mapper" in name.lower() or "primary sound" in name.lower():
                 continue
 
-            # Include devices that support input, or output devices on WASAPI for system audio
-            is_loopback = "wasapi" in hostapi_name.lower() and dev["max_output_channels"] > 0
-            if dev["max_input_channels"] > 0 or is_loopback:
+            # Only include devices that support input channels > 0
+            if dev["max_input_channels"] > 0:
                 devices.append(AudioDeviceInfo(
                     index=i,
                     name=dev["name"],
                     max_input_channels=dev["max_input_channels"],
                     max_output_channels=dev["max_output_channels"],
                     default_sample_rate=dev["default_samplerate"],
-                    is_loopback=is_loopback,
+                    is_loopback=False,
                     hostapi_name=hostapi_name,
                 ))
 
@@ -125,9 +124,6 @@ class AudioCaptureService:
     def get_default_device() -> Optional[AudioDeviceInfo]:
         """Find the default input audio device."""
         devices = AudioCaptureService.list_devices()
-        input_devices = [d for d in devices if d.max_input_channels > 0]
-        if input_devices:
-            return input_devices[0]
         if devices:
             return devices[0]
         return None
@@ -147,7 +143,7 @@ class AudioCaptureService:
 
         audio_data = audio_data.astype(np.float32)
 
-        # Software resample to 16000 Hz if native rate differs
+        # Software resample to target sample rate (16000 Hz) if native rate differs
         if self._native_sample_rate != self.sample_rate and len(audio_data) > 0:
             duration = len(audio_data) / self._native_sample_rate
             target_len = int(duration * self.sample_rate)
@@ -202,29 +198,32 @@ class AudioCaptureService:
 
         self._loop = asyncio.get_event_loop()
 
-        # Select device
-        if device_index is not None:
-            dev_info = sd.query_devices(device_index)
-            self._device_index = device_index
-            self._device_name = dev_info["name"]
-        else:
+        # Validate requested device index
+        target_idx = device_index
+        if target_idx is not None:
+            try:
+                dev_info = sd.query_devices(target_idx)
+                if dev_info.get("max_input_channels", 0) == 0:
+                    logger.warning("Requested device %d has 0 input channels. Falling back to default input.", target_idx)
+                    target_idx = None
+            except Exception as e:
+                logger.warning("Invalid device index %s (%s). Falling back to default input.", target_idx, e)
+                target_idx = None
+
+        if target_idx is None:
             default_dev = self.get_default_device()
             if default_dev:
-                self._device_index = default_dev.index
-                self._device_name = default_dev.name
-                dev_info = sd.query_devices(default_dev.index)
+                target_idx = default_dev.index
             else:
-                self._device_index = None
-                self._device_name = "Default input"
-                dev_info = sd.query_devices(kind="input")
+                target_idx = sd.default.device[0]
 
-        # Set native samplerate and valid channel count
+        dev_info = sd.query_devices(target_idx)
+        self._device_index = target_idx
+        self._device_name = dev_info["name"]
+
         self._native_sample_rate = int(dev_info.get("default_samplerate", 16000))
-        max_in = dev_info.get("max_input_channels", 0)
-        max_out = dev_info.get("max_output_channels", 0)
-
-        # For input streams, channel count must be >= 1
-        channels = max(1, min(max_in if max_in > 0 else max_out, 2))
+        max_in = dev_info.get("max_input_channels", 1)
+        channels = max(1, min(max_in, 2))
 
         logger.info(
             "Starting audio stream on device '%s' (index=%s, native_sr=%d, channels=%d)",
@@ -239,6 +238,7 @@ class AudioCaptureService:
         self._start_time = time.monotonic()
         self._is_recording = True
 
+        # Fail-safe stream opening
         try:
             self._stream = sd.InputStream(
                 device=self._device_index,
@@ -250,9 +250,29 @@ class AudioCaptureService:
             )
             self._stream.start()
         except Exception as e:
-            self._is_recording = False
-            logger.error("Failed to start audio stream on device %s: %s", self._device_index, e)
-            raise RuntimeError(f"Failed to start audio stream: {e}") from e
+            logger.warning("Failed to open audio stream on device %s: %s. Attempting fallback to default input.", self._device_index, e)
+            try:
+                def_idx = sd.default.device[0]
+                dev_info = sd.query_devices(def_idx)
+                self._device_index = def_idx
+                self._device_name = dev_info["name"]
+                self._native_sample_rate = int(dev_info.get("default_samplerate", 16000))
+                channels = max(1, min(dev_info.get("max_input_channels", 1), 2))
+                
+                self._stream = sd.InputStream(
+                    device=def_idx,
+                    samplerate=self._native_sample_rate,
+                    channels=channels,
+                    dtype="float32",
+                    callback=self._audio_callback,
+                    blocksize=int(self._native_sample_rate * 0.5),
+                )
+                self._stream.start()
+                logger.info("Fallback audio stream opened on device %s", self._device_name)
+            except Exception as fallback_err:
+                self._is_recording = False
+                logger.error("Fallback audio stream failed: %s", fallback_err)
+                raise RuntimeError(f"Failed to start audio stream: {fallback_err}") from fallback_err
 
         return self._device_name
 
@@ -266,7 +286,7 @@ class AudioCaptureService:
 
         if self._buffer:
             full_audio = np.concatenate(self._buffer)
-            if len(full_audio) > self.sample_rate * 0.5:  # Only if > 0.5s
+            if len(full_audio) > self.sample_rate * 0.5:
                 chunk_start = (self._chunk_index * (self.chunk_duration - self.overlap_duration))
                 chunk_end = chunk_start + len(full_audio) / self.sample_rate
 
