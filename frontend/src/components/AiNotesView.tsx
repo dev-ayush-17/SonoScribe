@@ -1,15 +1,17 @@
 import React, { useState } from 'react';
-import { Sparkles, CheckSquare, HelpCircle, ListCheck, Clock, RefreshCw, AlertCircle } from 'lucide-react';
+import { Sparkles, ListCheck, RefreshCw, AlertCircle, FileText, Calendar, Lightbulb } from 'lucide-react';
 import type { AiNote } from '../types';
 
 interface Props {
   notes: AiNote[];
+  artifacts?: Record<string, string>;
   onGenerateNotes: () => Promise<void>;
 }
 
-export const AiNotesView: React.FC<Props> = ({ notes, onGenerateNotes }) => {
+export const AiNotesView: React.FC<Props> = ({ notes, artifacts, onGenerateNotes }) => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [selectedDocTab, setSelectedDocTab] = useState<string>('minutes');
 
   const latestNote = notes.length > 0 ? notes[0] : null;
 
@@ -25,16 +27,21 @@ export const AiNotesView: React.FC<Props> = ({ notes, onGenerateNotes }) => {
     }
   };
 
+  const minutesDoc = artifacts?.minutes_of_meeting || latestNote?.summary || '';
+  const highlightsDoc = artifacts?.highlights || '';
+  const actionItemsDoc = artifacts?.action_items || '';
+  const proposalsDoc = artifacts?.proposals_and_future_plans || '';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Header action */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-            AI Meeting Notes & Summary
+            AI Windowed Meeting Artifacts (20-25 Min Blocks)
           </h3>
           <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-            Structured synthesis: facts, decisions, action items, and open questions
+            Synthesized documents: Minutes of Meeting, Highlights, Action Items, Proposals & Schedules
           </p>
         </div>
 
@@ -44,7 +51,7 @@ export const AiNotesView: React.FC<Props> = ({ notes, onGenerateNotes }) => {
           disabled={isGenerating}
         >
           <Sparkles size={16} />
-          {isGenerating ? 'Generating Notes...' : latestNote ? 'Regenerate Notes' : 'Generate AI Notes'}
+          {isGenerating ? 'Synthesizing 20m Windows...' : (latestNote || artifacts) ? 'Regenerate Meeting Artifacts' : 'Generate AI Artifacts'}
         </button>
       </div>
 
@@ -65,7 +72,51 @@ export const AiNotesView: React.FC<Props> = ({ notes, onGenerateNotes }) => {
         </div>
       )}
 
-      {!latestNote && !isGenerating && (
+      {/* Sub-document tabs */}
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '8px' }}>
+        <button
+          onClick={() => setSelectedDocTab('minutes')}
+          style={{
+            background: selectedDocTab === 'minutes' ? 'var(--bg-accent)' : 'transparent',
+            borderColor: selectedDocTab === 'minutes' ? 'var(--border-focus)' : 'transparent',
+            fontSize: '0.8rem',
+          }}
+        >
+          <FileText size={14} /> Minutes of Meeting
+        </button>
+        <button
+          onClick={() => setSelectedDocTab('highlights')}
+          style={{
+            background: selectedDocTab === 'highlights' ? 'var(--bg-accent)' : 'transparent',
+            borderColor: selectedDocTab === 'highlights' ? 'var(--border-focus)' : 'transparent',
+            fontSize: '0.8rem',
+          }}
+        >
+          <Lightbulb size={14} color="var(--accent-yellow)" /> Highlights
+        </button>
+        <button
+          onClick={() => setSelectedDocTab('actions')}
+          style={{
+            background: selectedDocTab === 'actions' ? 'var(--bg-accent)' : 'transparent',
+            borderColor: selectedDocTab === 'actions' ? 'var(--border-focus)' : 'transparent',
+            fontSize: '0.8rem',
+          }}
+        >
+          <ListCheck size={14} color="var(--accent-green)" /> Action Items & Schedules
+        </button>
+        <button
+          onClick={() => setSelectedDocTab('proposals')}
+          style={{
+            background: selectedDocTab === 'proposals' ? 'var(--bg-accent)' : 'transparent',
+            borderColor: selectedDocTab === 'proposals' ? 'var(--border-focus)' : 'transparent',
+            fontSize: '0.8rem',
+          }}
+        >
+          <Calendar size={14} color="var(--accent-blue)" /> Proposals & Future Plans
+        </button>
+      </div>
+
+      {!latestNote && !artifacts && !isGenerating && (
         <div style={{
           textAlign: 'center',
           padding: '40px 20px',
@@ -76,10 +127,10 @@ export const AiNotesView: React.FC<Props> = ({ notes, onGenerateNotes }) => {
         }}>
           <Sparkles size={32} style={{ margin: '0 auto 12px', opacity: 0.5, color: 'var(--accent-yellow)' }} />
           <p style={{ fontSize: '0.9rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '4px' }}>
-            No AI Notes Generated Yet
+            No AI Meeting Artifacts Generated Yet
           </p>
-          <p style={{ fontSize: '0.8rem', maxWidth: '400px', margin: '0 auto 16px' }}>
-            Click "Generate AI Notes" above to process the transcript using your configured local (Ollama) or cloud (Groq/Gemini) provider.
+          <p style={{ fontSize: '0.8rem', maxWidth: '440px', margin: '0 auto 16px' }}>
+            Click "Generate AI Artifacts" above to process transcript windows (20-25m blocks) using Groq / Ollama / Gemini.
           </p>
         </div>
       )}
@@ -94,94 +145,45 @@ export const AiNotesView: React.FC<Props> = ({ notes, onGenerateNotes }) => {
           color: 'var(--text-muted)',
         }}>
           <RefreshCw size={24} className="spin" style={{ margin: '0 auto 12px', color: 'var(--accent-blue)' }} />
-          <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>Analyzing transcript segments & synthesizing notes...</p>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>Processing transcript in 20-25 minute windowed blocks & extracting artifacts...</p>
         </div>
       )}
 
-      {latestNote && latestNote.status === 'completed' && !isGenerating && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Executive Summary */}
-          {latestNote.summary && (
-            <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-              <h4 style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent-blue)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}>
-                Summary
-              </h4>
-              <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-                {latestNote.summary}
-              </p>
+      {/* Render Document Content */}
+      {!isGenerating && (
+        <div style={{ background: 'var(--bg-input)', padding: '20px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
+          {selectedDocTab === 'minutes' && (
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.9rem' }}>
+              {minutesDoc || 'No minutes of meeting document generated yet.'}
             </div>
           )}
 
-          {/* Decisions */}
-          {latestNote.decisions && latestNote.decisions.length > 0 && (
-            <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent-green)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
-                <CheckSquare size={16} /> Explicit Decisions Made
-              </h4>
-              <ul style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.875rem' }}>
-                {latestNote.decisions.map((decision, idx) => (
-                  <li key={idx} style={{ color: 'var(--text-primary)' }}>{decision}</li>
-                ))}
-              </ul>
+          {selectedDocTab === 'highlights' && (
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.9rem' }}>
+              {highlightsDoc || 'No highlights document generated yet.'}
             </div>
           )}
 
-          {/* Action Items */}
-          {latestNote.action_items && latestNote.action_items.length > 0 && (
-            <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--accent-yellow)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
-                <ListCheck size={16} /> Action Items
-              </h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {latestNote.action_items.map((item, idx) => (
-                  <div key={idx} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '8px 12px',
-                    borderRadius: '6px',
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-subtle)',
-                    fontSize: '0.875rem',
-                  }}>
-                    <span style={{ color: 'var(--text-primary)' }}>• {item.task}</span>
-                    <div style={{ display: 'flex', gap: '12px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      <span><strong>Owner:</strong> {item.owner}</span>
-                      <span><strong>Due:</strong> {item.due_date}</span>
-                    </div>
+          {selectedDocTab === 'actions' && (
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.9rem' }}>
+              {actionItemsDoc || (
+                latestNote?.action_items && latestNote.action_items.length > 0 ? (
+                  <div>
+                    <h4 style={{ marginBottom: '12px' }}>Action Items</h4>
+                    {latestNote.action_items.map((item, idx) => (
+                      <div key={idx} style={{ padding: '8px', marginBottom: '6px', background: 'var(--bg-card)', borderRadius: '6px' }}>
+                        • {item.task} (Owner: {item.owner}, Due: {item.due_date})
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                ) : 'No action items document generated yet.'
+              )}
             </div>
           )}
 
-          {/* Open Questions */}
-          {latestNote.open_questions && latestNote.open_questions.length > 0 && (
-            <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
-                <HelpCircle size={16} /> Open Questions & Assumptions
-              </h4>
-              <ul style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.875rem' }}>
-                {latestNote.open_questions.map((q, idx) => (
-                  <li key={idx} style={{ color: 'var(--text-secondary)' }}>{q}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Notable Timestamps */}
-          {latestNote.notable_timestamps && latestNote.notable_timestamps.length > 0 && (
-            <div style={{ background: 'var(--bg-input)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
-              <h4 style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '12px' }}>
-                <Clock size={16} /> Notable Timestamps
-              </h4>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem' }}>
-                {latestNote.notable_timestamps.map((ts, idx) => (
-                  <div key={idx} style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                    {ts}
-                  </div>
-                ))}
-              </div>
+          {selectedDocTab === 'proposals' && (
+            <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6, fontSize: '0.9rem' }}>
+              {proposalsDoc || 'No proposals & future plans document generated yet.'}
             </div>
           )}
         </div>

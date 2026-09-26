@@ -15,6 +15,7 @@ from app.config import settings
 from app.database import async_session
 from app.models import Meeting, TranscriptSegment
 from app.services.audio.capture import AudioCaptureService, AudioChunk
+from app.services.session_files import session_file_manager
 from app.services.transcription.provider import (
     TranscriptionProvider,
     TranscriptionResult,
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class RecordingSession:
-    """Manages a single recording session: audio → transcription → DB."""
+    """Manages a single recording session: 1-min audio chunks → transcription → DB & session file."""
 
     def __init__(
         self,
@@ -37,18 +38,19 @@ class RecordingSession:
         self.meeting_id = meeting_id
         self.provider = transcription_provider
         self.sample_rate = sample_rate
-        self.on_segment = on_segment  # Callback for WebSocket updates
+        self.on_segment = on_segment
 
         self._audio = AudioCaptureService(
             sample_rate=sample_rate,
-            chunk_duration=20.0,
-            overlap_duration=1.5,
+            chunk_duration=60.0,   # 1 minute per chunk
+            overlap_duration=5.0,  # 5 seconds overlap
         )
         self._transcription_task: Optional[asyncio.Task] = None
         self._is_active = False
         self._segment_count = 0
         self._error: Optional[str] = None
         self._start_time: float = 0.0
+        self._last_ai_process_time: float = 0.0
         self._failed_chunks: List[AudioChunk] = []
 
     @property
@@ -193,6 +195,15 @@ class RecordingSession:
                     seg_start = chunk.start_time + result.start_time
                     seg_end = chunk.start_time + result.end_time
 
+                    # Append to session's raw transcript file on disk
+                    session_file_manager.append_segment(
+                        meeting_id=self.meeting_id,
+                        start_time=seg_start,
+                        end_time=seg_end,
+                        text=result.text,
+                        segment_index=self._segment_count,
+                    )
+
                     segment = TranscriptSegment(
                         meeting_id=self.meeting_id,
                         segment_index=self._segment_count,
@@ -208,7 +219,7 @@ class RecordingSession:
                     db.add(segment)
                     self._segment_count += 1
 
-                    # Notify via callback (for WebSocket)
+                    # Notify via callback (for WebSocket live streaming)
                     if self.on_segment:
                         try:
                             await self.on_segment({
@@ -224,6 +235,13 @@ class RecordingSession:
 
                 await db.commit()
 
+            # Check if 20 minutes (1200s) have passed since last rolling AI processing
+            elapsed_since_ai = time.monotonic() - self._last_ai_process_time
+            if elapsed_since_ai >= 1200.0 and settings.ai_provider != "none":
+                self._last_ai_process_time = time.monotonic()
+                logger.info("20 minutes reached for meeting %s — triggering rolling AI window processing", self.meeting_id)
+                asyncio.create_task(self._trigger_rolling_ai_processing())
+
             logger.info(
                 "Chunk %d: %d segment(s) persisted",
                 chunk.chunk_index, len(results),
@@ -233,6 +251,16 @@ class RecordingSession:
             logger.error("Transcription failed for chunk %d: %s", chunk.chunk_index, e)
             self._error = str(e)
             self._failed_chunks.append(chunk)
+
+    async def _trigger_rolling_ai_processing(self):
+        """Run windowed AI processing in background without blocking recording."""
+        try:
+            from app.services.ai.notes import generate_windowed_meeting_artifacts
+            raw_text = session_file_manager.read_raw_transcript(self.meeting_id)
+            if raw_text:
+                await generate_windowed_meeting_artifacts(self.meeting_id, raw_text)
+        except Exception as e:
+            logger.warning("Rolling AI background processing error: %s", e)
 
 
 class RecordingManager:

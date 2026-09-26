@@ -1,20 +1,22 @@
-"""AI notes API endpoints."""
+"""AI notes API endpoints — windowed generation and multi-artifact document serving."""
 
 from __future__ import annotations
 
 import json
 import logging
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
-from app.models import AiNote, Meeting, TranscriptSegment
-from app.schemas import AiNoteRequest, AiNoteResponse, ActionItem
-from app.services.ai.notes import create_ai_provider
+from app.models import AiNote, Meeting
+from app.schemas import ActionItem, AiNoteRequest, AiNoteResponse
+from app.services.ai.notes import create_ai_provider, generate_windowed_meeting_artifacts
+from app.services.session_files import session_file_manager
 
 logger = logging.getLogger(__name__)
 
@@ -61,37 +63,31 @@ def _note_to_response(note: AiNote) -> AiNoteResponse:
     )
 
 
-def _format_timestamp(seconds: float) -> str:
-    h = int(seconds // 3600)
-    m = int((seconds % 3600) // 60)
-    s = int(seconds % 60)
-    if h > 0:
-        return f"{h:02d}:{m:02d}:{s:02d}"
-    return f"{m:02d}:{s:02d}"
-
-
-@router.post("/{meeting_id}/ai-notes", response_model=AiNoteResponse)
+@router.post("/{meeting_id}/ai-notes", response_model=dict)
 async def generate_ai_notes(
     meeting_id: str,
     request: AiNoteRequest = AiNoteRequest(),
     db: AsyncSession = Depends(get_db),
-) -> AiNoteResponse:
-    """Generate AI notes for a meeting. Requires configured AI provider."""
-    # Get meeting with segments
-    query = (
-        select(Meeting)
-        .options(selectinload(Meeting.segments))
-        .where(Meeting.id == meeting_id)
-    )
-    result = await db.execute(query)
-    meeting = result.scalar_one_or_none()
-    if not meeting:
-        raise HTTPException(status_code=404, detail="Meeting not found")
+) -> dict:
+    """Generate windowed AI notes (minutes, highlights, proposals, action items) for a meeting."""
+    # Read raw transcript file
+    raw_transcript = session_file_manager.read_raw_transcript(meeting_id)
 
-    if not meeting.segments:
-        raise HTTPException(status_code=400, detail="No transcript segments found for this meeting")
+    # Fallback to DB segments if file not found
+    if not raw_transcript:
+        query = (
+            select(Meeting)
+            .options(selectinload(Meeting.segments))
+            .where(Meeting.id == meeting_id)
+        )
+        result = await db.execute(query)
+        meeting = result.scalar_one_or_none()
+        if not meeting or not meeting.segments:
+            raise HTTPException(status_code=400, detail="No transcript available for this meeting")
 
-    # Determine provider
+        segments = sorted(meeting.segments, key=lambda s: s.segment_index)
+        raw_transcript = "\n".join([f"[{seg.start_time:.1f}s] {seg.text}" for seg in segments])
+
     provider_name = request.provider or settings.ai_provider
     if provider_name == "none":
         raise HTTPException(
@@ -99,74 +95,54 @@ async def generate_ai_notes(
             detail="No AI provider configured. Set AI_PROVIDER in .env (groq, ollama, or gemini)",
         )
 
-    try:
-        provider = create_ai_provider(
-            provider_name=provider_name,
-            model=request.model or "",
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
+    provider = create_ai_provider(provider_name=provider_name, model=request.model or "")
     if provider is None or not provider.is_available:
         raise HTTPException(
             status_code=400,
             detail=f"AI provider '{provider_name}' is not available. Check configuration/API keys.",
         )
 
-    # Create pending note
-    ai_note = AiNote(
-        meeting_id=meeting_id,
-        provider=provider_name,
-        model=request.model or getattr(provider, '_model', ''),
-        status="processing",
-    )
-    db.add(ai_note)
-    await db.flush()
-
-    # Build transcript text
-    segments = sorted(meeting.segments, key=lambda s: s.segment_index)
-    transcript_lines = []
-    for seg in segments:
-        ts = _format_timestamp(seg.start_time)
-        transcript_lines.append(f"[{ts}] {seg.text}")
-    transcript_text = "\n".join(transcript_lines)
-
     try:
-        # Generate notes
-        notes = await provider.generate_for_long_transcript(transcript_text)
+        # Generate multi-artifact docs in 20-25m windows
+        artifacts = await generate_windowed_meeting_artifacts(
+            meeting_id=meeting_id,
+            transcript_text=raw_transcript,
+            provider_name=provider_name,
+        )
 
-        # Update the note record
-        ai_note.summary = notes.get("summary", "")
-        ai_note.decisions = json.dumps(notes.get("decisions", []))
-        ai_note.action_items = json.dumps(notes.get("action_items", []))
-        ai_note.open_questions = json.dumps(notes.get("open_questions", []))
-        ai_note.notable_timestamps = json.dumps(notes.get("notable_timestamps", []))
-        ai_note.raw_response = json.dumps(notes)
-        ai_note.status = "completed"
+        # Save record in DB
+        ai_note = AiNote(
+            meeting_id=meeting_id,
+            provider=provider_name,
+            model=request.model or getattr(provider, "_model", ""),
+            summary=artifacts.get("minutes_of_meeting", ""),
+            decisions=json.dumps([]),
+            action_items=json.dumps([]),
+            status="completed",
+        )
+        db.add(ai_note)
+        await db.commit()
 
-        await db.flush()
-
-        logger.info("AI notes generated for meeting %s via %s", meeting_id, provider_name)
-        return _note_to_response(ai_note)
+        logger.info("AI windowed artifacts generated for meeting %s", meeting_id)
+        return {
+            "status": "completed",
+            "meeting_id": meeting_id,
+            "artifacts": artifacts,
+        }
 
     except Exception as e:
         logger.error("AI notes generation failed: %s", e)
-        ai_note.status = "failed"
-        ai_note.error_message = str(e)
-        await db.flush()
-        raise HTTPException(
-            status_code=500,
-            detail=f"AI notes generation failed: {e}",
-        )
+        raise HTTPException(status_code=500, detail=f"AI notes generation failed: {e}")
 
 
-@router.get("/{meeting_id}/ai-notes", response_model=list)
-async def list_ai_notes(
-    meeting_id: str,
-    db: AsyncSession = Depends(get_db),
-) -> list:
-    """List all AI notes for a meeting."""
-    query = select(AiNote).where(AiNote.meeting_id == meeting_id).order_by(AiNote.created_at.desc())
-    result = await db.execute(query)
-    notes = result.scalars().all()
-    return [_note_to_response(note) for note in notes]
+@router.get("/{meeting_id}/artifacts")
+async def list_meeting_artifacts(meeting_id: str) -> dict:
+    """Get all saved session artifact files (raw transcript, minutes, highlights, action items, proposals)."""
+    raw_transcript = session_file_manager.read_raw_transcript(meeting_id)
+    artifacts = session_file_manager.list_artifacts(meeting_id)
+
+    return {
+        "meeting_id": meeting_id,
+        "raw_transcript": raw_transcript,
+        "artifacts": artifacts,
+    }

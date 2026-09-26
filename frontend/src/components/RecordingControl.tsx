@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Square, Volume2, Clock, AlertCircle } from 'lucide-react';
+import { Play, Square, Volume2, Clock, AlertCircle, FileCheck } from 'lucide-react';
 import type { AudioDevice, RecordingStatus, TranscriptSegment } from '../types';
 import { ConsentModal } from './ConsentModal';
 
@@ -24,6 +24,9 @@ export const RecordingControl: React.FC<Props> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
+
+  // Cap live streaming display to recent 6 segments
+  const recentSegments = liveSegments.slice(-6);
 
   useEffect(() => {
     if (devices.length > 0 && !selectedDevice) {
@@ -102,7 +105,7 @@ export const RecordingControl: React.FC<Props> = ({
           {recordingStatus.is_recording ? (
             <div className="badge badge-recording">
               <span className="pulse-dot"></span>
-              Recording Live
+              Recording Live (1-Min Chunks)
             </div>
           ) : (
             <div className="badge badge-idle">
@@ -118,7 +121,7 @@ export const RecordingControl: React.FC<Props> = ({
         </div>
 
         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-          {recordingStatus.segment_count > 0 && `${recordingStatus.segment_count} segments captured`}
+          {recordingStatus.segment_count > 0 && `${recordingStatus.segment_count} 1-min segments written to session doc`}
         </div>
       </div>
 
@@ -195,14 +198,16 @@ export const RecordingControl: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Live Streaming Transcript Panel */}
+      {/* Live Streaming Transcript Panel capped to recent 6 transcripts */}
       {recordingStatus.is_recording && (
         <div style={{ marginTop: '20px', borderTop: '1px solid var(--border-subtle)', paddingTop: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <span style={{ fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
-              LIVE TRANSCRIPT STREAM
+              LIVE RECENT TRANSCRIPTS (SHOWING RECENT {recentSegments.length} OF {liveSegments.length})
             </span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--accent-blue)' }}>Continuous VAD Chunking</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--accent-green)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <FileCheck size={14} /> Full Session Doc Auto-Updating
+            </span>
           </div>
 
           <div style={{
@@ -216,13 +221,13 @@ export const RecordingControl: React.FC<Props> = ({
             flexDirection: 'column',
             gap: '10px',
           }}>
-            {liveSegments.length === 0 ? (
+            {recentSegments.length === 0 ? (
               <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '24px 0' }}>
                 <Volume2 size={20} style={{ margin: '0 auto 8px', opacity: 0.5 }} />
-                Listening for audio... Speech segments will appear live as VAD processes 20s chunks.
+                Listening for audio... Speech segments will appear live as 1-minute chunks process.
               </div>
             ) : (
-              liveSegments.map((seg, idx) => (
+              recentSegments.map((seg, idx) => (
                 <div key={idx} style={{ display: 'flex', gap: '12px', fontSize: '0.875rem' }}>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-muted)', minWidth: '48px' }}>
                     {Math.floor(seg.start_time / 60)}:{(Math.floor(seg.start_time % 60)).toString().padStart(2, '0')}

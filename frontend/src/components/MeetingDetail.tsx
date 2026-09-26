@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Download, Sparkles, FileText, Calendar, Clock, Copy, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Download, Sparkles, FileText, Calendar, Clock, Copy, Check, FileCheck } from 'lucide-react';
 import type { MeetingDetail as IMeetingDetail } from '../types';
 import { exportTranscript } from '../services/api';
 import { AiNotesView } from './AiNotesView';
@@ -10,9 +10,21 @@ interface Props {
 }
 
 export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) => {
-  const [activeTab, setActiveTab] = useState<'transcript' | 'ai'>('transcript');
+  const [activeTab, setActiveTab] = useState<'transcript' | 'raw_file' | 'ai'>('transcript');
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [artifacts, setArtifacts] = useState<Record<string, string>>({});
+  const [rawFileText, setRawFileText] = useState<string>('');
+
+  useEffect(() => {
+    fetch(`http://localhost:8000/api/v1/meetings/${meeting.id}/artifacts`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.artifacts) setArtifacts(data.artifacts);
+        if (data.raw_transcript) setRawFileText(data.raw_transcript);
+      })
+      .catch((err) => console.error('Failed to load session artifacts:', err));
+  }, [meeting.id]);
 
   const formatTimestamp = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -39,7 +51,7 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
   };
 
   const handleCopyTranscript = () => {
-    const text = meeting.segments.map((s) => `[${formatTimestamp(s.start_time)}] ${s.text}`).join('\n');
+    const text = rawFileText || meeting.segments.map((s) => `[${formatTimestamp(s.start_time)}] ${s.text}`).join('\n');
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -62,7 +74,7 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
             {meeting.title}
           </h2>
 
-          {/* Export Dropdown / Actions */}
+          {/* Export Actions */}
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={handleCopyTranscript} title="Copy plain transcript text">
               {copied ? <Check size={14} color="var(--accent-green)" /> : <Copy size={14} />}
@@ -86,12 +98,12 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
             <Clock size={13} /> {Math.floor((meeting.duration_seconds || 0) / 60)}m {Math.floor((meeting.duration_seconds || 0) % 60)}s
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <FileText size={13} /> {meeting.segments.length} segments
+            <FileText size={13} /> {meeting.segments.length} 1-min segments
           </span>
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Navigation Tabs */}
       <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid var(--border-subtle)', marginBottom: '20px' }}>
         <button
           onClick={() => setActiveTab('transcript')}
@@ -104,7 +116,21 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
             paddingBottom: '8px',
           }}
         >
-          <FileText size={16} /> Transcript ({meeting.segments.length})
+          <FileText size={16} /> Segment Timeline ({meeting.segments.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('raw_file')}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            borderBottom: activeTab === 'raw_file' ? '2px solid var(--accent-green)' : '2px solid transparent',
+            borderRadius: 0,
+            color: activeTab === 'raw_file' ? 'var(--text-primary)' : 'var(--text-muted)',
+            paddingBottom: '8px',
+          }}
+        >
+          <FileCheck size={16} color="var(--accent-green)" /> Session Transcript File
         </button>
 
         <button
@@ -118,13 +144,13 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
             paddingBottom: '8px',
           }}
         >
-          <Sparkles size={16} color="var(--accent-yellow)" /> AI Notes {meeting.ai_notes.length > 0 && `(${meeting.ai_notes.length})`}
+          <Sparkles size={16} color="var(--accent-yellow)" /> AI Artifacts & Minutes
         </button>
       </div>
 
       {/* Tab Contents */}
       <div style={{ overflowY: 'auto', flex: 1 }}>
-        {activeTab === 'transcript' ? (
+        {activeTab === 'transcript' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {meeting.segments.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
@@ -162,8 +188,26 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
               ))
             )}
           </div>
-        ) : (
-          <AiNotesView notes={meeting.ai_notes} onGenerateNotes={onGenerateAiNotes} />
+        )}
+
+        {activeTab === 'raw_file' && (
+          <div style={{
+            background: 'var(--bg-main)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '8px',
+            padding: '16px',
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.85rem',
+            lineHeight: 1.6,
+            whiteSpace: 'pre-wrap',
+            color: 'var(--text-primary)',
+          }}>
+            {rawFileText || 'No raw session transcript document file found on disk for this meeting.'}
+          </div>
+        )}
+
+        {activeTab === 'ai' && (
+          <AiNotesView notes={meeting.ai_notes} artifacts={artifacts} onGenerateNotes={onGenerateAiNotes} />
         )}
       </div>
     </div>

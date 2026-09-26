@@ -43,8 +43,8 @@ class AudioCaptureService:
     def __init__(
         self,
         sample_rate: int = 16000,
-        chunk_duration: float = 20.0,  # seconds per chunk
-        overlap_duration: float = 1.5,  # seconds overlap between chunks
+        chunk_duration: float = 60.0,  # 1 minute per chunk
+        overlap_duration: float = 5.0,  # 5 seconds overlap
         on_chunk: Optional[Callable[[AudioChunk], None]] = None,
     ):
         self.sample_rate = sample_rate

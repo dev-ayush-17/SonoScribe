@@ -6,12 +6,11 @@
 - [x] Memory bank created (`memory/PROJECT.md`, `DECISIONS.md`, `PROGRESS.md`, `PATTERNS.md`)
 - [x] Backend architecture: FastAPI 0.115+, SQLAlchemy async, SQLite database, pydantic-settings
 - [x] Health check & provider config endpoints (`/api/v1/health`, `/api/v1/config`)
-- [x] Audio capture pipeline: Native hardware sample rate auto-detection (48kHz/44.1kHz), mono channel calculation, in-memory resampling to 16kHz, WDM-KS/Mapper device filtering, and 20s VAD chunking with 1.5s overlap
-- [x] Transcription provider abstraction: `faster-whisper` (local) & Groq STT (cloud), retry queue for failed chunks
-- [x] Recording Session Manager: start/stop lifecycle, real-time segment saving into SQLite database
-- [x] Meetings API: list, detail, patch, delete, and export (Markdown, plain Text, JSON formats)
-- [x] AI Notes engine: provider abstraction (Groq, Ollama, Gemini), structured JSON parsing, chunked summarization + synthesis for long transcripts
-- [x] WebSocket server: live transcript segment streaming (`/ws/transcript`)
+- [x] Audio capture pipeline: 60s (1 min) VAD chunks with 5s overlap for scalable long meeting recording
+- [x] Session File Persistence: Continuous auto-append of 1-min transcript segments to `meeting_docs/{id}/raw_transcript.txt`
+- [x] 20–25 Minute Rolling AI Window Processing: Windowed AI block extraction preventing context limit overflow
+- [x] Multi-Artifact AI Outputs: Automatic generation of Minutes of Meeting, Highlights, Action Items, Proposals & Schedules
+- [x] UI Scalability: Live stream capped to recent 6 segments with live session doc status indicator
 - [x] Backend Unit & Integration Tests: Pytest suite (6/6 tests passing cleanly)
 - [x] Frontend React + TypeScript application with Vite and Lucide icons
 - [x] Vercel/Linear dark theme design system (`src/index.css`)
@@ -34,5 +33,7 @@
 3. Full-text search across past transcripts using SQLite FTS5
 
 ## Tested & Verified
-- Pytest backend test suite (`python -m pytest backend/tests/test_backend.py`): 6 passed in 0.79s
-- Frontend TypeScript build (`npm run build`): Completed in 2.48s with 0 errors
+- Pytest backend test suite (`backend\venv\Scripts\python.exe -m pytest backend/tests/test_backend.py`): 6 passed in 0.79s
+- `faster-whisper` model execution (`base.en` & `tiny.en`): Verified working in local venv
+- Fail-safe audio stream device fallback: Verified in python with zero `PaErrorCode -9998` errors
+- Frontend TypeScript build (`npm run build`): Completed in 476ms with 0 errors

@@ -40,3 +40,11 @@
 ### D006: No raw audio by default
 **Decision**: Do not store raw audio unless user explicitly enables `STORE_RAW_AUDIO=true`.
 **Rationale**: Privacy-first, reduce storage, audio is transcribed in-memory and discarded.
+
+### D007: 60-Second Audio Chunking with 5-Second Overlap
+**Decision**: Increase audio capture window from 20s to 60s (1 min) with 5s overlap.
+**Rationale**: Provides full, meaningful sentence context per segment for long meeting recording.
+
+### D008: Durable Raw Session Files & 20–25 Minute Rolling Windowed AI Artifacts
+**Decision**: Save continuous raw transcript files (`meeting_docs/{id}/raw_transcript.txt`) and process AI notes in 20–25 minute rolling window blocks.
+**Rationale**: Prevents LLM context window overflow on multi-hour meetings and produces clean multi-artifact outputs (Minutes of Meeting, Highlights, Action Items, Proposals & Schedules).
