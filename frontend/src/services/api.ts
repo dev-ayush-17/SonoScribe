@@ -76,7 +76,7 @@ export async function deleteMeeting(id: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to delete meeting');
 }
 
-export async function generateAiNotes(meetingId: string, provider?: string): Promise<AiNote> {
+export async function generateAiNotes(meetingId: string, provider?: string): Promise<{ status: string; meeting_id: string; artifacts?: Record<string, string>; note?: AiNote }> {
   const res = await fetch(`${API_BASE}/meetings/${meetingId}/ai-notes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

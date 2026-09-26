@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Sparkles, FileText, Calendar, Clock, Copy, Check, FileCheck } from 'lucide-react';
+import { Download, Sparkles, FileText, Calendar, Clock, Copy, Check, FileCheck, FolderDown } from 'lucide-react';
 import type { MeetingDetail as IMeetingDetail } from '../types';
 import { exportTranscript } from '../services/api';
 import { AiNotesView } from './AiNotesView';
@@ -16,7 +16,7 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
   const [artifacts, setArtifacts] = useState<Record<string, string>>({});
   const [rawFileText, setRawFileText] = useState<string>('');
 
-  useEffect(() => {
+  const loadArtifacts = () => {
     fetch(`http://localhost:8000/api/v1/meetings/${meeting.id}/artifacts`)
       .then((res) => res.json())
       .then((data) => {
@@ -24,6 +24,10 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
         if (data.raw_transcript) setRawFileText(data.raw_transcript);
       })
       .catch((err) => console.error('Failed to load session artifacts:', err));
+  };
+
+  useEffect(() => {
+    loadArtifacts();
   }, [meeting.id]);
 
   const formatTimestamp = (seconds: number) => {
@@ -48,6 +52,43 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
     } finally {
       setExporting(false);
     }
+  };
+
+  const handleDownloadAllBundle = () => {
+    // Combine all artifacts and raw transcript into a single comprehensive markdown document
+    const title = meeting.title;
+    const lines = [
+      `# ${title} — Comprehensive Meeting Documentation`,
+      `**Date**: ${new Date(meeting.started_at).toLocaleString()}`,
+      `**Duration**: ${Math.floor((meeting.duration_seconds || 0) / 60)} minutes`,
+      "",
+      "---",
+      "",
+    ];
+
+    if (artifacts.minutes_of_meeting) {
+      lines.push(artifacts.minutes_of_meeting, "", "---", "");
+    }
+    if (artifacts.highlights) {
+      lines.push(artifacts.highlights, "", "---", "");
+    }
+    if (artifacts.action_items) {
+      lines.push(artifacts.action_items, "", "---", "");
+    }
+    if (artifacts.proposals_and_future_plans) {
+      lines.push(artifacts.proposals_and_future_plans, "", "---", "");
+    }
+
+    lines.push("# Complete Raw Session Transcript", "", rawFileText || meeting.segments.map(s => `[${formatTimestamp(s.start_time)}] ${s.text}`).join('\n'));
+
+    const fullContent = lines.join('\n');
+    const blob = new Blob([fullContent], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_complete_documentation.md`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleCopyTranscript = () => {
@@ -83,8 +124,8 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
             <button onClick={() => handleExport('markdown')} disabled={exporting}>
               <Download size={14} /> Export MD
             </button>
-            <button onClick={() => handleExport('text')} disabled={exporting}>
-              Export Text
+            <button className="primary" onClick={handleDownloadAllBundle} title="Download complete meeting documentation bundle">
+              <FolderDown size={14} /> Download All Docs
             </button>
           </div>
         </div>
@@ -207,7 +248,14 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
         )}
 
         {activeTab === 'ai' && (
-          <AiNotesView notes={meeting.ai_notes} artifacts={artifacts} onGenerateNotes={onGenerateAiNotes} />
+          <AiNotesView
+            notes={meeting.ai_notes}
+            artifacts={artifacts}
+            onGenerateNotes={async () => {
+              await onGenerateAiNotes();
+              loadArtifacts();
+            }}
+          />
         )}
       </div>
     </div>

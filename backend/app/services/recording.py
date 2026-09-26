@@ -188,50 +188,56 @@ class RecordingSession:
                 logger.debug("No speech in chunk %d", chunk.chunk_index)
                 return
 
-            # Persist segments
+            # Combine all sub-phrases in the 1-minute chunk into a single continuous segment
+            combined_text = " ".join([r.text.strip() for r in results if r.text and r.text.strip()])
+            if not combined_text:
+                return
+
+            seg_start = chunk.start_time
+            seg_end = chunk.end_time
+            primary_provider = results[0].provider if results else "whisper"
+            primary_model = results[0].model if results else "base.en"
+            language = results[0].language if results else "en"
+
+            # Persist as 1 continuous segment in DB and session text file
             async with async_session() as db:
-                for result in results:
-                    # Adjust timestamps relative to meeting start
-                    seg_start = chunk.start_time + result.start_time
-                    seg_end = chunk.start_time + result.end_time
+                # Append to session's raw transcript file on disk
+                session_file_manager.append_segment(
+                    meeting_id=self.meeting_id,
+                    start_time=seg_start,
+                    end_time=seg_end,
+                    text=combined_text,
+                    segment_index=self._segment_count,
+                )
 
-                    # Append to session's raw transcript file on disk
-                    session_file_manager.append_segment(
-                        meeting_id=self.meeting_id,
-                        start_time=seg_start,
-                        end_time=seg_end,
-                        text=result.text,
-                        segment_index=self._segment_count,
-                    )
+                segment = TranscriptSegment(
+                    meeting_id=self.meeting_id,
+                    segment_index=self._segment_count,
+                    start_time=seg_start,
+                    end_time=seg_end,
+                    text=combined_text,
+                    confidence=results[0].confidence if hasattr(results[0], 'confidence') else 0.95,
+                    provider=primary_provider,
+                    model=primary_model,
+                    status="final",
+                    language=language,
+                )
+                db.add(segment)
+                self._segment_count += 1
 
-                    segment = TranscriptSegment(
-                        meeting_id=self.meeting_id,
-                        segment_index=self._segment_count,
-                        start_time=seg_start,
-                        end_time=seg_end,
-                        text=result.text,
-                        confidence=result.confidence,
-                        provider=result.provider,
-                        model=result.model,
-                        status="final",
-                        language=result.language,
-                    )
-                    db.add(segment)
-                    self._segment_count += 1
-
-                    # Notify via callback (for WebSocket live streaming)
-                    if self.on_segment:
-                        try:
-                            await self.on_segment({
-                                "meeting_id": self.meeting_id,
-                                "segment_index": segment.segment_index,
-                                "start_time": seg_start,
-                                "end_time": seg_end,
-                                "text": result.text,
-                                "confidence": result.confidence,
-                            })
-                        except Exception as e:
-                            logger.warning("Segment callback error: %s", e)
+                # Notify via callback (for WebSocket live streaming)
+                if self.on_segment:
+                    try:
+                        await self.on_segment({
+                            "meeting_id": self.meeting_id,
+                            "segment_index": segment.segment_index,
+                            "start_time": seg_start,
+                            "end_time": seg_end,
+                            "text": combined_text,
+                            "confidence": segment.confidence,
+                        })
+                    except Exception as e:
+                        logger.warning("Segment callback error: %s", e)
 
                 await db.commit()
 

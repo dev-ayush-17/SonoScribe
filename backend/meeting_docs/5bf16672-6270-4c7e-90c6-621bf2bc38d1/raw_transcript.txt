@@ -1,0 +1,5 @@
+[00:01 - 00:12] Segment #1: This is the first video for this chunking, we are here to see if the model works or not.
+[00:12 - 00:22] Segment #2: The model will be working, it's fine, we are here to check how and by this model is necessary
+[00:22 - 00:25] Segment #3: and how it can help in our sessions.
+[00:25 - 00:26] Segment #4: Thank you.
+[00:26 - 00:35] Segment #5: If you are listening to me, please note that this model is made on 27 as a highlighting feature.

@@ -116,18 +116,21 @@ async def generate_ai_notes(
             provider=provider_name,
             model=request.model or getattr(provider, "_model", ""),
             summary=artifacts.get("minutes_of_meeting", ""),
-            decisions=json.dumps([]),
-            action_items=json.dumps([]),
+            decisions=json.dumps([artifacts.get("highlights", "")]),
+            action_items=json.dumps([artifacts.get("action_items", "")]),
+            open_questions=json.dumps([artifacts.get("proposals_and_future_plans", "")]),
             status="completed",
         )
         db.add(ai_note)
         await db.commit()
 
-        logger.info("AI windowed artifacts generated for meeting %s", meeting_id)
+        logger.info("AI windowed artifacts generated for meeting %s via %s", meeting_id, provider_name)
         return {
             "status": "completed",
             "meeting_id": meeting_id,
+            "provider": provider_name,
             "artifacts": artifacts,
+            "note": _note_to_response(ai_note),
         }
 
     except Exception as e:

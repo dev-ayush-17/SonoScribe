@@ -139,16 +139,78 @@ def _parse_ai_response(response_text: str) -> dict:
 
 
 def _validate_notes(data: dict) -> dict:
-    """Validate notes dictionary structure."""
+    """Validate notes dictionary structure with robust field alias fallbacks."""
+    if not isinstance(data, dict):
+        return {
+            "summary": str(data),
+            "highlights": [],
+            "decisions": [],
+            "action_items": [],
+            "proposals_and_future_plans": [],
+            "schedules_and_milestones": [],
+            "open_questions": [],
+            "notable_timestamps": [],
+        }
+
+    summary = (
+        data.get("summary")
+        or data.get("minutes_of_meeting")
+        or data.get("overview")
+        or data.get("minutes")
+        or ""
+    )
+    highlights = (
+        data.get("highlights")
+        or data.get("key_points")
+        or data.get("key_takeaways")
+        or []
+    )
+    decisions = (
+        data.get("decisions")
+        or data.get("key_decisions")
+        or []
+    )
+    action_items = (
+        data.get("action_items")
+        or data.get("tasks")
+        or data.get("next_steps")
+        or []
+    )
+    proposals = (
+        data.get("proposals_and_future_plans")
+        or data.get("proposals")
+        or data.get("future_plans")
+        or data.get("roadmap")
+        or []
+    )
+    schedules = (
+        data.get("schedules_and_milestones")
+        or data.get("schedules")
+        or data.get("deadlines")
+        or data.get("milestones")
+        or []
+    )
+    questions = (
+        data.get("open_questions")
+        or data.get("questions")
+        or data.get("unresolved_items")
+        or []
+    )
+    timestamps = (
+        data.get("notable_timestamps")
+        or data.get("timestamps")
+        or []
+    )
+
     return {
-        "summary": data.get("summary", ""),
-        "highlights": data.get("highlights", []) if isinstance(data.get("highlights"), list) else [],
-        "decisions": data.get("decisions", []) if isinstance(data.get("decisions"), list) else [],
-        "action_items": _validate_action_items(data.get("action_items", [])),
-        "proposals_and_future_plans": data.get("proposals_and_future_plans", []) if isinstance(data.get("proposals_and_future_plans"), list) else [],
-        "schedules_and_milestones": data.get("schedules_and_milestones", []) if isinstance(data.get("schedules_and_milestones"), list) else [],
-        "open_questions": data.get("open_questions", []) if isinstance(data.get("open_questions"), list) else [],
-        "notable_timestamps": data.get("notable_timestamps", []) if isinstance(data.get("notable_timestamps"), list) else [],
+        "summary": summary if isinstance(summary, str) else str(summary),
+        "highlights": highlights if isinstance(highlights, list) else [str(highlights)],
+        "decisions": decisions if isinstance(decisions, list) else [str(decisions)],
+        "action_items": _validate_action_items(action_items),
+        "proposals_and_future_plans": proposals if isinstance(proposals, list) else [str(proposals)],
+        "schedules_and_milestones": schedules if isinstance(schedules, list) else [str(schedules)],
+        "open_questions": questions if isinstance(questions, list) else [str(questions)],
+        "notable_timestamps": timestamps if isinstance(timestamps, list) else [str(timestamps)],
     }
 
 
