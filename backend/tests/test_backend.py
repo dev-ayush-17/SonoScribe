@@ -199,3 +199,22 @@ async def test_mock_transcription_provider():
     results = await provider.transcribe(audio, 16000)
     assert len(results) == 1
     assert results[0].text == "This is a mock transcription segment."
+
+
+def test_ai_provider_factory():
+    hf_provider = create_ai_provider("huggingface")
+    assert hf_provider is not None
+    assert hf_provider.name == "huggingface"
+
+    groq_provider = create_ai_provider("groq", api_key="dummy_key")
+    assert groq_provider is not None
+    assert groq_provider.name == "groq"
+
+    ollama_provider = create_ai_provider("ollama")
+    assert ollama_provider is not None
+    assert ollama_provider.name == "ollama"
+
+    gemini_provider = create_ai_provider("gemini", api_key="dummy_key")
+    assert gemini_provider is not None
+    assert gemini_provider.name == "gemini"
+

@@ -11,9 +11,9 @@
 - [x] 20–25 Minute Rolling AI Window Processing: Windowed AI block extraction preventing context limit overflow
 - [x] Multi-Artifact AI Outputs: Automatic generation of Minutes of Meeting, Highlights, Action Items, Proposals & Schedules
 - [x] UI Scalability: Live stream capped to recent 6 segments with live session doc status indicator
-- [x] Backend Unit & Integration Tests: Pytest suite (6/6 tests passing cleanly)
-- [x] Frontend React + TypeScript application with Vite and Lucide icons
-- [x] Vercel/Linear dark theme design system (`src/index.css`)
+- [x] 1-Minute Chunk Text Consolidation: Audio pauses/breaks within a 1-minute window are consolidated into 1 continuous segment
+- [x] AI Prompt & Document Fallbacks: Robust alias parsing ensuring AI documents generate reliably across Groq/Ollama/Gemini
+- [x] Download All Docs Bundle: 1-click export of complete meeting documentation bundle (Minutes, Highlights, Action Items, Proposals, Raw Transcript)
 - [x] Explicit user recording consent modal (`ConsentModal.tsx`)
 - [x] Audio source picker, live status indicator, live streaming transcript view
 - [x] Past meeting list with search and deletion

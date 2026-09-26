@@ -38,7 +38,9 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> HealthResponse:
 
     # Check AI provider
     ai_available = False
-    if settings.ai_provider == "groq":
+    if settings.ai_provider == "huggingface":
+        ai_available = True
+    elif settings.ai_provider == "groq":
         ai_available = bool(settings.groq_api_key)
     elif settings.ai_provider == "ollama":
         ai_available = True  # Assume available if configured
@@ -78,7 +80,9 @@ async def get_config() -> ConfigResponse:
     ai_error = None
     ai_available = False
     ai_configured = settings.ai_provider != "none"
-    if settings.ai_provider == "groq":
+    if settings.ai_provider == "huggingface":
+        ai_available = True
+    elif settings.ai_provider == "groq":
         if settings.groq_api_key:
             ai_available = True
         else:

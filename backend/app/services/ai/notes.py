@@ -287,7 +287,7 @@ def _synthesize_multi_artifacts(results: List[dict]) -> Dict[str, str]:
 class GroqAiProvider(AiNotesProvider):
     """AI notes using Groq API."""
 
-    def __init__(self, api_key: str, model: str = "llama-3.1-70b-versatile"):
+    def __init__(self, api_key: str, model: str = "llama-3.3-70b-versatile"):
         self._api_key = api_key
         self._model = model
 
@@ -313,6 +313,80 @@ class GroqAiProvider(AiNotesProvider):
             response_format={"type": "json_object"},
         )
         return _parse_ai_response(response.choices[0].message.content)
+
+
+class HuggingFaceAiProvider(AiNotesProvider):
+    """AI notes using Hugging Face Serverless Inference API."""
+
+    def __init__(self, api_key: str = "", model: str = "meta-llama/Llama-3.2-3B-Instruct"):
+        self._api_key = api_key
+        self._model = model
+
+    @property
+    def name(self) -> str:
+        return "huggingface"
+
+    @property
+    def is_available(self) -> bool:
+        return bool(self._api_key)
+
+    async def generate(self, transcript_text: str) -> dict:
+        if not self._api_key:
+            raise ValueError(
+                "HUGGINGFACE_API_KEY is not set in backend/.env. "
+                "Get a free token at https://huggingface.co/settings/tokens and add HUGGINGFACE_API_KEY=hf_... to backend/.env"
+            )
+
+        import httpx
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+
+        url = "https://router.huggingface.co/hf-inference/v1/chat/completions"
+        payload = {
+            "model": self._model,
+            "messages": [
+                {"role": "system", "content": NOTES_SYSTEM_PROMPT},
+                {"role": "user", "content": WINDOW_EXTRACTION_PROMPT.format(text=transcript_text)},
+            ],
+            "temperature": 0.3,
+            "max_tokens": 2048,
+        }
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            if response.status_code == 401:
+                raise ValueError(
+                    "Hugging Face API returned 401 Unauthorized. "
+                    "Please verify your HUGGINGFACE_API_KEY token in backend/.env"
+                )
+            elif response.status_code == 404:
+                fallback_url = f"https://api-inference.huggingface.co/models/{self._model}"
+                response = await client.post(
+                    fallback_url,
+                    headers=headers,
+                    json={"inputs": f"{NOTES_SYSTEM_PROMPT}\n\n{WINDOW_EXTRACTION_PROMPT.format(text=transcript_text)}"},
+                )
+                if response.status_code == 401:
+                    raise ValueError(
+                        "Hugging Face API returned 401 Unauthorized. "
+                        "Please verify your HUGGINGFACE_API_KEY token in backend/.env"
+                    )
+
+            response.raise_for_status()
+            res_data = response.json()
+
+            if isinstance(res_data, dict) and "choices" in res_data:
+                content = res_data["choices"][0]["message"]["content"]
+            elif isinstance(res_data, list) and len(res_data) > 0:
+                if isinstance(res_data[0], dict) and "generated_text" in res_data[0]:
+                    content = res_data[0]["generated_text"]
+                else:
+                    content = str(res_data[0])
+            elif isinstance(res_data, dict) and "generated_text" in res_data:
+                content = res_data["generated_text"]
+            else:
+                content = str(res_data)
+
+            return _parse_ai_response(content)
 
 
 class OllamaAiProvider(AiNotesProvider):
@@ -382,7 +456,12 @@ def create_ai_provider(
 ) -> Optional[AiNotesProvider]:
     """Factory function to create an AI notes provider."""
     p_name = provider_name or settings.ai_provider
-    if p_name == "groq":
+    if p_name == "huggingface":
+        return HuggingFaceAiProvider(
+            api_key=api_key or settings.huggingface_api_key,
+            model=model or settings.huggingface_model,
+        )
+    elif p_name == "groq":
         return GroqAiProvider(
             api_key=api_key or settings.groq_api_key,
             model=model or settings.groq_ai_model,

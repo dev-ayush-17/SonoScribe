@@ -130,7 +130,7 @@ export const AiNotesView: React.FC<Props> = ({ notes, artifacts, onGenerateNotes
             No AI Meeting Artifacts Generated Yet
           </p>
           <p style={{ fontSize: '0.8rem', maxWidth: '440px', margin: '0 auto 16px' }}>
-            Click "Generate AI Artifacts" above to process transcript windows (20-25m blocks) using Groq / Ollama / Gemini.
+            Click "Generate AI Artifacts" above to process transcript windows (20-25m blocks) using Hugging Face / Groq / Ollama / Gemini.
           </p>
         </div>
       )}

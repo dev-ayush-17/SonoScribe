@@ -60,3 +60,6 @@ htmlcov/
 
 # Whisper models (downloaded at runtime)
 models/
+
+
+meeting_docs/

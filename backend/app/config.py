@@ -27,13 +27,17 @@ class Settings(BaseSettings):
     faster_whisper_compute_type: str = "int8"
     faster_whisper_device: str = "cpu"
 
+    # ── Hugging Face ──
+    huggingface_api_key: str = ""
+    huggingface_model: str = "meta-llama/Llama-3.1-3B-Instruct"
+
     # ── Groq ──
     groq_api_key: str = ""
     groq_transcription_model: str = "whisper-large-v3"
 
     # ── AI Notes ──
-    ai_provider: str = "none"
-    groq_ai_model: str = "llama-3.1-70b-versatile"
+    ai_provider: str = "huggingface"
+    groq_ai_model: str = "llama-3.3-70b-versatile"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1"
     gemini_api_key: str = ""

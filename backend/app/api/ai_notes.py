@@ -92,7 +92,7 @@ async def generate_ai_notes(
     if provider_name == "none":
         raise HTTPException(
             status_code=400,
-            detail="No AI provider configured. Set AI_PROVIDER in .env (groq, ollama, or gemini)",
+            detail="No AI provider configured. Set AI_PROVIDER in .env (huggingface, groq, ollama, or gemini)",
         )
 
     provider = create_ai_provider(provider_name=provider_name, model=request.model or "")
