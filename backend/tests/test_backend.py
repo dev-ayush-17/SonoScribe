@@ -126,6 +126,15 @@ async def test_meeting_crud_and_export():
         assert res.status_code == 200
         assert "[00:00] Welcome everyone" in res.json()["content"]
 
+        # Test ICS Export
+        res = await ac.get("/api/v1/meetings/test-meeting-1/export?format=ics")
+        assert res.status_code == 200
+        ics_content = res.json()["content"]
+        assert "BEGIN:VCALENDAR" in ics_content
+        assert "BEGIN:VEVENT" in ics_content
+        assert "SUMMARY:Sprint Planning & Architecture" in ics_content
+        assert "END:VCALENDAR" in ics_content
+
         # Update meeting
         res = await ac.patch("/api/v1/meetings/test-meeting-1", json={"title": "Updated Sprint Planning"})
         assert res.status_code == 200

@@ -89,7 +89,7 @@ export async function generateAiNotes(meetingId: string, provider?: string): Pro
   return res.json();
 }
 
-export async function exportTranscript(meetingId: string, format: 'markdown' | 'text' | 'json'): Promise<{ content: string; format: string }> {
+export async function exportTranscript(meetingId: string, format: 'markdown' | 'text' | 'json' | 'ics'): Promise<{ content: string; format: string }> {
   const res = await fetch(`${API_BASE}/meetings/${meetingId}/export?format=${format}`);
   if (!res.ok) throw new Error('Failed to export transcript');
   return res.json();

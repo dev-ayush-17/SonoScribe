@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Download, Sparkles, FileText, Calendar, Clock, Copy, Check, FileCheck, FolderDown } from 'lucide-react';
 import type { MeetingDetail as IMeetingDetail } from '../types';
 import { exportTranscript } from '../services/api';
+import { generateIcsFile } from '../utils/icsExport';
 import { AiNotesView } from './AiNotesView';
 
 interface Props {
@@ -36,15 +37,32 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleExport = async (format: 'markdown' | 'text' | 'json') => {
+  const handleExport = async (format: 'markdown' | 'text' | 'json' | 'ics') => {
     setExporting(true);
     try {
+      if (format === 'ics') {
+        try {
+          const icsContent = await generateIcsFile(meeting, artifacts.minutes_of_meeting);
+          const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `${meeting.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.ics`;
+          link.click();
+          URL.revokeObjectURL(url);
+          return;
+        } catch (clientErr) {
+          console.warn('Frontend ICS generator failed, falling back to backend:', clientErr);
+        }
+      }
       const data = await exportTranscript(meeting.id, format);
-      const blob = new Blob([data.content], { type: 'text/plain;charset=utf-8' });
+      const mimeType = format === 'ics' ? 'text/calendar;charset=utf-8' : 'text/plain;charset=utf-8';
+      const ext = format === 'markdown' ? 'md' : format;
+      const blob = new Blob([data.content], { type: mimeType });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${meeting.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_transcript.${format === 'markdown' ? 'md' : format}`;
+      link.download = `${meeting.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.${ext}`;
       link.click();
       URL.revokeObjectURL(url);
     } catch (err) {
@@ -102,7 +120,7 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
     <div style={{
       background: 'var(--bg-card)',
       border: '1px solid var(--border-subtle)',
-      borderRadius: '12px',
+      borderRadius: 'var(--radius-lg)',
       padding: '24px',
       height: '100%',
       display: 'flex',
@@ -124,11 +142,15 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
             <button onClick={() => handleExport('markdown')} disabled={exporting}>
               <Download size={14} /> Export MD
             </button>
+            <button onClick={() => handleExport('ics')} disabled={exporting} title="Export calendar event (.ics)">
+              <Calendar size={14} /> Export .ics
+            </button>
             <button className="primary" onClick={handleDownloadAllBundle} title="Download complete meeting documentation bundle">
               <FolderDown size={14} /> Download All Docs
             </button>
           </div>
         </div>
+
 
         {/* Metadata Bar */}
         <div style={{ display: 'flex', gap: '16px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
@@ -145,47 +167,29 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
       </div>
 
       {/* Navigation Tabs */}
-      <div style={{ display: 'flex', gap: '12px', borderBottom: '1px solid var(--border-subtle)', marginBottom: '20px' }}>
+      <div className="tab-bar">
         <button
+          className={`tab-btn ${activeTab === 'transcript' ? 'active' : ''}`}
           onClick={() => setActiveTab('transcript')}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'transcript' ? '2px solid var(--accent-blue)' : '2px solid transparent',
-            borderRadius: 0,
-            color: activeTab === 'transcript' ? 'var(--text-primary)' : 'var(--text-muted)',
-            paddingBottom: '8px',
-          }}
+          style={{ borderBottomColor: activeTab === 'transcript' ? 'var(--accent-blue)' : 'transparent' }}
         >
-          <FileText size={16} /> Segment Timeline ({meeting.segments.length})
+          <FileText size={15} /> Segment Timeline ({meeting.segments.length})
         </button>
 
         <button
+          className={`tab-btn ${activeTab === 'raw_file' ? 'active' : ''}`}
           onClick={() => setActiveTab('raw_file')}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'raw_file' ? '2px solid var(--accent-green)' : '2px solid transparent',
-            borderRadius: 0,
-            color: activeTab === 'raw_file' ? 'var(--text-primary)' : 'var(--text-muted)',
-            paddingBottom: '8px',
-          }}
+          style={{ borderBottomColor: activeTab === 'raw_file' ? 'var(--accent-teal)' : 'transparent' }}
         >
-          <FileCheck size={16} color="var(--accent-green)" /> Session Transcript File
+          <FileCheck size={15} color={activeTab === 'raw_file' ? 'var(--accent-teal)' : undefined} /> Session File
         </button>
 
         <button
+          className={`tab-btn ${activeTab === 'ai' ? 'active' : ''}`}
           onClick={() => setActiveTab('ai')}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            borderBottom: activeTab === 'ai' ? '2px solid var(--accent-yellow)' : '2px solid transparent',
-            borderRadius: 0,
-            color: activeTab === 'ai' ? 'var(--text-primary)' : 'var(--text-muted)',
-            paddingBottom: '8px',
-          }}
+          style={{ borderBottomColor: activeTab === 'ai' ? 'var(--accent-amber)' : 'transparent' }}
         >
-          <Sparkles size={16} color="var(--accent-yellow)" /> AI Artifacts & Minutes
+          <Sparkles size={15} color={activeTab === 'ai' ? 'var(--accent-amber)' : undefined} /> AI Artifacts
         </button>
       </div>
 
@@ -194,33 +198,18 @@ export const MeetingDetail: React.FC<Props> = ({ meeting, onGenerateAiNotes }) =
         {activeTab === 'transcript' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {meeting.segments.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
+              <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)', fontSize: '0.875rem' }}>
                 No transcript segments available for this meeting.
               </div>
             ) : (
               meeting.segments.map((seg) => (
-                <div key={seg.id} style={{
-                  display: 'flex',
-                  gap: '16px',
-                  padding: '12px',
-                  borderRadius: '6px',
-                  background: 'var(--bg-input)',
-                  border: '1px solid var(--border-subtle)',
-                }}>
-                  <span style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-muted)',
-                    minWidth: '54px',
-                    paddingTop: '2px',
-                  }}>
-                    [{formatTimestamp(seg.start_time)}]
-                  </span>
+                <div key={seg.id} className="segment-card">
+                  <span className="segment-timestamp">[{formatTimestamp(seg.start_time)}]</span>
                   <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--text-primary)', lineHeight: 1.55 }}>
                       {seg.text}
                     </p>
-                    <div style={{ display: 'flex', gap: '12px', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                    <div style={{ display: 'flex', gap: '12px', fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>
                       <span>Engine: {seg.provider}</span>
                       {seg.model && <span>Model: {seg.model}</span>}
                     </div>

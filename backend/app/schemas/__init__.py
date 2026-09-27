@@ -163,7 +163,7 @@ class ConfigResponse(BaseModel):
 # ── Export Schemas ──
 
 class ExportRequest(BaseModel):
-    format: str = Field("markdown", pattern="^(markdown|text|json)$")
+    format: str = Field("markdown", pattern="^(markdown|text|json|ics)$")
 
 
 # Forward reference resolution

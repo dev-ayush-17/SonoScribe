@@ -1,8 +1,13 @@
 import { useEffect, useState, useCallback } from 'react';
+import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { RecordingControl } from './components/RecordingControl';
 import { MeetingList } from './components/MeetingList';
 import { MeetingDetail } from './components/MeetingDetail';
+import { ActionItemsHub } from './components/ActionItemsHub';
+import { ProviderSettingsView } from './components/ProviderSettingsView';
+import { AnimatedBackground } from './components/AnimatedBackground';
+import { Hero } from './components/Hero';
 import type {
   AppConfig,
   AudioDevice,
@@ -27,6 +32,9 @@ import {
 } from './services/api';
 
 export function App() {
+  const [activeTab, setActiveTab] = useState<'studio' | 'meetings' | 'actions' | 'settings'>('studio');
+  const [showHero, setShowHero] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const [health, setHealth] = useState<HealthStatus | undefined>();
   const [config, setConfig] = useState<AppConfig | undefined>();
   const [devices, setDevices] = useState<AudioDevice[]>([]);
@@ -119,6 +127,7 @@ export function App() {
       duration_seconds: 0,
       segment_count: 0,
     });
+    setShowHero(false);
   };
 
   const handleStopRecording = async () => {
@@ -131,6 +140,7 @@ export function App() {
     });
     await loadMeetings();
     setSelectedMeetingId(res.meeting_id);
+    setActiveTab('meetings');
   };
 
   const handleDeleteMeeting = async (id: string) => {
@@ -148,56 +158,140 @@ export function App() {
     setSelectedMeetingDetail(updated);
   };
 
+  const handleGetStarted = () => {
+    setShowHero(false);
+    setActiveTab('studio');
+  };
+
   return (
-    <div className="app-container">
-      <Header health={health} config={config} onRefreshConfig={loadMetadata} />
+    <>
+      {/* Fixed animated background - sits behind everything */}
+      <AnimatedBackground />
 
-      <RecordingControl
-        devices={devices}
-        recordingStatus={recordingStatus}
-        liveSegments={liveSegments}
-        onStartRecording={handleStartRecording}
-        onStopRecording={handleStopRecording}
-      />
-
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '24px', minHeight: '520px' }}>
-        <MeetingList
-          meetings={meetings}
-          selectedMeetingId={selectedMeetingId}
-          onSelectMeeting={setSelectedMeetingId}
-          onDeleteMeeting={handleDeleteMeeting}
+      <div className="app-shell">
+        {/* Navigation Sidebar */}
+        <Sidebar
+          activeTab={activeTab}
+          onTabChange={(tab) => {
+            setActiveTab(tab);
+            setShowHero(false);
+          }}
+          meetingCount={meetings.length}
         />
 
-        <div>
-          {selectedMeetingDetail ? (
-            <MeetingDetail
-              meeting={selectedMeetingDetail}
-              onGenerateAiNotes={handleGenerateAiNotes}
-            />
-          ) : (
-            <div style={{
-              background: 'var(--bg-card)',
-              border: '1px solid var(--border-subtle)',
-              borderRadius: '12px',
-              padding: '40px',
-              height: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'var(--text-muted)',
-              textAlign: 'center',
-            }}>
-              <div>
-                <p style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '4px' }}>
-                  No Meeting Selected
-                </p>
-                <p style={{ fontSize: '0.85rem' }}>Select a past meeting from the left list or start a new recording.</p>
+        {/* Main Workspace Area */}
+        <main className="main-workspace">
+          <Header
+            health={health}
+            config={config}
+            onRefreshConfig={loadMetadata}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+          />
+
+          {/* Hero — shown on first load */}
+          {showHero && activeTab === 'studio' && (
+            <Hero onGetStarted={handleGetStarted} />
+          )}
+
+          {activeTab === 'studio' && (
+            <div>
+              <RecordingControl
+                devices={devices}
+                recordingStatus={recordingStatus}
+                liveSegments={liveSegments}
+                onStartRecording={handleStartRecording}
+                onStopRecording={handleStopRecording}
+              />
+
+              <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '24px', minHeight: '480px' }}>
+                <MeetingList
+                  meetings={meetings}
+                  selectedMeetingId={selectedMeetingId}
+                  onSelectMeeting={(id) => {
+                    setSelectedMeetingId(id);
+                    setShowHero(false);
+                  }}
+                  onDeleteMeeting={handleDeleteMeeting}
+                />
+
+                <div>
+                  {selectedMeetingDetail ? (
+                    <MeetingDetail
+                      meeting={selectedMeetingDetail}
+                      onGenerateAiNotes={handleGenerateAiNotes}
+                    />
+                  ) : (
+                    <div style={{
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-subtle)',
+                      borderRadius: 'var(--radius-lg)',
+                      padding: '48px',
+                      height: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--text-muted)',
+                      textAlign: 'center',
+                    }}>
+                      <div>
+                        <p style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
+                          No Meeting Selected
+                        </p>
+                        <p style={{ fontSize: '0.85rem' }}>Select a past meeting from the list or start a new recording above.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
-        </div>
+
+          {activeTab === 'meetings' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: '24px', minHeight: '620px' }}>
+              <MeetingList
+                meetings={meetings}
+                selectedMeetingId={selectedMeetingId}
+                onSelectMeeting={setSelectedMeetingId}
+                onDeleteMeeting={handleDeleteMeeting}
+              />
+
+              <div>
+                {selectedMeetingDetail ? (
+                  <MeetingDetail
+                    meeting={selectedMeetingDetail}
+                    onGenerateAiNotes={handleGenerateAiNotes}
+                  />
+                ) : (
+                  <div style={{
+                    background: 'var(--bg-card)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '48px',
+                    height: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--text-muted)',
+                    textAlign: 'center',
+                  }}>
+                    <p style={{ fontSize: '1rem', color: 'var(--text-primary)' }}>Select a meeting from the archive list.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'actions' && (
+            <ActionItemsHub meetings={meetings} />
+          )}
+
+          {activeTab === 'settings' && (
+            <ProviderSettingsView config={config} onRefresh={loadMetadata} />
+          )}
+        </main>
       </div>
-    </div>
+    </>
   );
 }
 

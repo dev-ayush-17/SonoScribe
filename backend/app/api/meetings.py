@@ -197,7 +197,7 @@ async def delete_meeting(
 @router.get("/{meeting_id}/export")
 async def export_transcript(
     meeting_id: str,
-    format: str = Query("markdown", pattern="^(markdown|text|json)$"),
+    format: str = Query("markdown", pattern="^(markdown|text|json|ics)$"),
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Export a meeting's transcript in the specified format."""
@@ -217,6 +217,8 @@ async def export_transcript(
         content = _export_markdown(meeting, segments, meeting.ai_notes)
     elif format == "text":
         content = _export_text(meeting, segments)
+    elif format == "ics":
+        content = _export_ics(meeting, segments, meeting.ai_notes)
     else:
         content = _export_json(meeting, segments, meeting.ai_notes)
 
@@ -339,3 +341,97 @@ def _export_json(meeting: Meeting, segments: list, notes: list) -> str:
             "open_questions": _parse_json_field(note.open_questions),
         }
     return json_mod.dumps(data, indent=2)
+
+
+def _export_ics(meeting: Meeting, segments: list, notes: list) -> str:
+    """Export meeting session as standard iCalendar (.ics) format."""
+    from datetime import timedelta
+
+    dt_start = meeting.started_at
+    if dt_start.tzinfo is None:
+        dt_start = dt_start.replace(tzinfo=timezone.utc)
+    else:
+        dt_start = dt_start.astimezone(timezone.utc)
+
+    if meeting.ended_at:
+        dt_end = meeting.ended_at
+        if dt_end.tzinfo is None:
+            dt_end = dt_end.replace(tzinfo=timezone.utc)
+        else:
+            dt_end = dt_end.astimezone(timezone.utc)
+    else:
+        dur = meeting.duration_seconds or 1800.0
+        dt_end = dt_start + timedelta(seconds=dur)
+
+    now_utc = datetime.now(timezone.utc)
+    dt_stamp_str = now_utc.strftime("%Y%m%dT%H%M%SZ")
+    dt_start_str = dt_start.strftime("%Y%m%dT%H%M%SZ")
+    dt_end_str = dt_end.strftime("%Y%m%dT%H%M%SZ")
+
+    desc_parts = [f"SonoScribe Meeting: {meeting.title}"]
+    desc_parts.append(f"Duration: {int((meeting.duration_seconds or 0) // 60)} minutes")
+
+    completed_notes = [n for n in notes if n.status == "completed"]
+    if completed_notes:
+        note = completed_notes[-1]
+        if note.summary:
+            desc_parts.append(f"\n--- Executive Summary ---\n{note.summary}")
+        action_items = _parse_json_field(note.action_items)
+        if action_items:
+            desc_parts.append("\n--- Action Items ---")
+            for item in action_items:
+                if isinstance(item, dict):
+                    task = item.get("task", str(item))
+                    owner = item.get("owner", "unspecified")
+                    due = item.get("due_date", "unspecified")
+                    desc_parts.append(f"• {task} (Owner: {owner}, Due: {due})")
+                else:
+                    desc_parts.append(f"• {item}")
+
+    if segments:
+        desc_parts.append("\n--- Transcript Highlights ---")
+        for seg in segments[:10]:
+            ts = _format_timestamp(seg.start_time)
+            desc_parts.append(f"[{ts}] {seg.text}")
+        if len(segments) > 10:
+            desc_parts.append(f"... and {len(segments) - 10} more segments.")
+
+    raw_description = "\n".join(desc_parts)
+
+    escaped_description = (
+        raw_description.replace("\\", "\\\\")
+        .replace(";", "\\;")
+        .replace(",", "\\,")
+        .replace("\r\n", "\\n")
+        .replace("\n", "\\n")
+    )
+
+    escaped_title = (
+        meeting.title.replace("\\", "\\\\")
+        .replace(";", "\\;")
+        .replace(",", "\\,")
+    )
+
+    uid = f"meeting-{meeting.id}@sonoscribe.app"
+
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//SonoScribe//Meeting Calendar Export//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "BEGIN:VEVENT",
+        f"UID:{uid}",
+        f"DTSTAMP:{dt_stamp_str}",
+        f"DTSTART:{dt_start_str}",
+        f"DTEND:{dt_end_str}",
+        f"SUMMARY:{escaped_title}",
+        f"DESCRIPTION:{escaped_description}",
+        "LOCATION:SonoScribe Audio Session",
+        "STATUS:CONFIRMED",
+        "END:VEVENT",
+        "END:VCALENDAR",
+    ]
+
+    return "\r\n".join(lines)
+
