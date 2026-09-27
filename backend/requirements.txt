@@ -15,3 +15,5 @@ faster-whisper>=1.0.3
 pytest>=8.3.3
 pytest-asyncio>=0.24.0
 
+sqlalchemy[asyncio]>=2.0.36
+greenlet>=3.0.3
