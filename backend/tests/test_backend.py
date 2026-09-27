@@ -147,6 +147,32 @@ async def test_meeting_crud_and_export():
         assert res.status_code == 404
 
 
+@pytest.mark.asyncio
+async def test_upload_recording_endpoint():
+    import io
+    import wave
+    sr = 16000
+    samples = (np.sin(2 * np.pi * 440 * np.linspace(0, 0.5, sr // 2)) * 10000).astype(np.int16)
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sr)
+        wf.writeframes(samples.tobytes())
+    wav_bytes = buf.getvalue()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        files = {"file": ("tab_audio.wav", wav_bytes, "audio/wav")}
+        data = {"title": "Extension Google Meet Session"}
+        res = await ac.post("/api/v1/recording/upload", files=files, data=data)
+        assert res.status_code == 200
+        res_json = res.json()
+        assert res_json["status"] == "completed"
+        assert res_json["title"] == "Extension Google Meet Session"
+        assert "meeting_id" in res_json
+
+
+
 def test_ai_response_parser():
     raw_json = """{
         "summary": "Discussed Q3 roadmap and team allocations.",

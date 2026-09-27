@@ -59,6 +59,14 @@ class SessionFileManager:
         with open(raw_file, "r", encoding="utf-8") as f:
             return f.read()
 
+    def write_raw_transcript(self, meeting_id: str, content: str) -> Path:
+        """Write complete content to the session's raw transcript file."""
+        raw_file = self.get_raw_transcript_path(meeting_id)
+        with open(raw_file, "w", encoding="utf-8") as f:
+            f.write(content)
+        return raw_file
+
+
     def save_artifact_file(
         self,
         meeting_id: str,

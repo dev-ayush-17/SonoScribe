@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SonoScribe Tab Capture</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="extension-card">
+    <div class="brand">
+      <div class="brand-logo">✨</div>
+      <div class="brand-title">SonoScribe</div>
+    </div>
+    
+    <div class="status-container">
+      <div id="statusDot" class="status-dot idle"></div>
+      <span id="statusText" class="status-text">Ready to capture tab</span>
+    </div>
+
+    <div id="timerContainer" class="timer-display hidden">
+      <span id="timerText">00:00</span>
+    </div>
+
+    <div id="activeTabName" class="tab-title"></div>
+
+    <button id="actionBtn" class="primary-btn">
+      Start Capturing Tab
+    </button>
+
+    <div id="messageBox" class="message-box hidden"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,16 +1,17 @@
-"""Recording control API endpoints."""
-
-from __future__ import annotations
-
+import io
 import logging
+import wave
 from datetime import datetime, timezone
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+import numpy as np
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
-from app.models import Meeting
+from app.models import Meeting, TranscriptSegment
 from app.schemas import (
     AudioDeviceInfo,
     RecordingStartRequest,
@@ -20,10 +21,28 @@ from app.schemas import (
 )
 from app.services.audio.capture import AudioCaptureService
 from app.services.recording import recording_manager
+from app.services.session_files import session_file_manager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/recording", tags=["recording"])
+
+
+def _decode_audio_file(file_bytes: bytes) -> tuple[np.ndarray, int]:
+    """Decode WAV file bytes into float32 numpy array and sample rate."""
+    try:
+        with wave.open(io.BytesIO(file_bytes), "rb") as wf:
+            sample_rate = wf.getframerate()
+            n_channels = wf.getnchannels()
+            n_frames = wf.getnframes()
+            frames = wf.readframes(n_frames)
+            audio_int16 = np.frombuffer(frames, dtype=np.int16)
+            if n_channels > 1:
+                audio_int16 = audio_int16.reshape(-1, n_channels).mean(axis=1)
+            audio_float32 = audio_int16.astype(np.float32) / 32768.0
+            return audio_float32, sample_rate
+    except Exception as wav_err:
+        raise ValueError(f"Unsupported audio format (must be 16-bit WAV): {wav_err}")
 
 
 @router.get("/status", response_model=RecordingStatusResponse)
@@ -137,3 +156,93 @@ async def stop_recording(
     except Exception as e:
         logger.error("Failed to stop recording: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/upload")
+async def upload_audio_recording(
+    file: UploadFile = File(...),
+    title: Optional[str] = Form("Tab Capture Session"),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Upload audio file (from Chrome Extension) and process transcription & AI notes."""
+    if not file:
+        raise HTTPException(status_code=400, detail="No audio file provided")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio file")
+
+    # Create meeting record in DB
+    meeting = Meeting(
+        title=title or "Tab Capture Session",
+        started_at=datetime.now(timezone.utc),
+        status="completed",
+        audio_device="Chrome Extension TabCapture",
+    )
+    db.add(meeting)
+    await db.flush()
+    meeting_id = meeting.id
+
+    try:
+        audio_data, sample_rate = _decode_audio_file(file_bytes)
+    except Exception as e:
+        logger.error("Failed to decode uploaded audio file: %s", e)
+        raise HTTPException(status_code=400, detail=f"Failed to decode audio file: {e}")
+
+    duration_seconds = len(audio_data) / float(sample_rate) if sample_rate else 0.0
+    meeting.duration_seconds = duration_seconds
+    meeting.ended_at = datetime.now(timezone.utc)
+
+    if settings.store_raw_audio:
+        raw_path = session_file_manager.save_raw_audio(meeting_id, file_bytes, extension="wav")
+        meeting.raw_audio_path = raw_path
+
+    provider = recording_manager._get_provider()
+    chunk_samples = sample_rate * 60
+    chunks = [audio_data[i:i + chunk_samples] for i in range(0, len(audio_data), chunk_samples)] or [audio_data]
+
+    segment_index = 0
+    full_transcript_lines = []
+
+    for idx, chunk in enumerate(chunks):
+        chunk_start_time = idx * 60.0
+        results = await provider.transcribe(chunk, sample_rate=sample_rate)
+        for r in results:
+            seg = TranscriptSegment(
+                meeting_id=meeting_id,
+                segment_index=segment_index,
+                start_time=chunk_start_time + r.start_time,
+                end_time=chunk_start_time + r.end_time,
+                text=r.text,
+                confidence=r.confidence,
+                provider=r.provider,
+                model=r.model,
+                status="final",
+                language=r.language,
+            )
+            db.add(seg)
+            segment_index += 1
+            full_transcript_lines.append(f"[{chunk_start_time + r.start_time:.1f}s] {r.text}")
+
+    await db.commit()
+
+    raw_transcript_text = "\n".join(full_transcript_lines)
+    session_file_manager.write_raw_transcript(meeting_id, raw_transcript_text)
+
+
+    artifacts = {}
+    try:
+        from app.services.ai.notes import generate_windowed_meeting_artifacts
+        artifacts = await generate_windowed_meeting_artifacts(meeting_id, raw_transcript_text)
+    except Exception as e:
+        logger.warning("AI notes generation for uploaded session failed: %s", e)
+
+    return {
+        "status": "completed",
+        "meeting_id": meeting_id,
+        "title": meeting.title,
+        "duration_seconds": duration_seconds,
+        "segment_count": segment_index,
+        "artifacts": artifacts,
+    }
+
