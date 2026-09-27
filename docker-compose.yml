@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sonoscribe-app
+    ports:
+      - "3000:3000"
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
+    volumes:
+      - ./data:/app/backend/data
+      - ./audio_storage:/app/backend/audio_storage
+      - ./meeting_docs:/app/backend/meeting_docs
+    restart: unless-stopped

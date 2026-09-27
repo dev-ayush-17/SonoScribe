@@ -58,6 +58,18 @@ app.include_router(meetings_router, prefix="/api/v1")
 app.include_router(recording_router, prefix="/api/v1")
 app.include_router(ai_notes_router, prefix="/api/v1")
 
+# Mount built frontend static files if available
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+dist_candidates = [Path("../frontend/dist"), Path("./frontend/dist"), Path("/app/frontend/dist")]
+for dist_path in dist_candidates:
+    if dist_path.exists():
+        logger.info("Mounting frontend static dist from %s", dist_path.resolve())
+        app.mount("/", StaticFiles(directory=str(dist_path.resolve()), html=True), name="static")
+        break
+
+
 
 # Active WebSocket connection manager for live transcript streaming
 class ConnectionManager:
