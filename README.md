@@ -8,7 +8,9 @@ A local-first meeting recorder, Chrome Extension tab audio capture engine, and A
 
 ## 1. Try It Live
 - **Live Vercel Application**: [https://frontend-eight-snowy-82.vercel.app](https://frontend-eight-snowy-82.vercel.app)
+- **Live Render Docker Service**: [https://sonoscribe-api-xw35.onrender.com](https://sonoscribe-api-xw35.onrender.com)
 - **Local Dev Instance**: [http://localhost:5173](http://localhost:5173)
+
 
 
 ---
