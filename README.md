@@ -7,8 +7,9 @@ A local-first meeting recorder, Chrome Extension tab audio capture engine, and A
 ---
 
 ## 1. Try It Live
-- **Live Demo Instance**: [http://localhost:5173](http://localhost:5173) *(Local instance)*
-- **API Server**: [http://localhost:8000/api/v1/health](http://localhost:8000/api/v1/health)
+- **Live Vercel Application**: [https://frontend-eight-snowy-82.vercel.app](https://frontend-eight-snowy-82.vercel.app)
+- **Local Dev Instance**: [http://localhost:5173](http://localhost:5173)
+
 
 ---
 
